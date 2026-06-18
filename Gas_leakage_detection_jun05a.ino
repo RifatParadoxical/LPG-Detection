@@ -24,6 +24,16 @@ void onPpmChange(){
   //
 }
 
+double calibrateRO() {
+  double gas = analogRead(sensor);
+  if (gas < 248.18) {
+    gas = 248.18;
+  }
+  double vO = gas * (3.3 / 4095);
+  rO = (rL * (3.3 - vO)) / vO;
+  return rO;
+}
+
 void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN){
     for(int i = 0; i < sp_CRITICAL_LEN; i++){
         dacWrite(25, pgm_read_byte(&(sp_CRITICAL[i])));
@@ -33,6 +43,11 @@ void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN){
 
 void loopFunc() {
   double gas_value = analogRead(sensor);
+
+  if (gas_value < 248.18) {
+    gas_value = 248.18;
+  }
+
   double vS = gas_value * (3.3 / 4095);
   double rS = (rL * (3.3 - vS)) / vS;
 
@@ -99,8 +114,7 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("MQ-5 Heating Up!    ");
   lcd.setCursor(0, 1);
-  lcd.print("Wait a minute...      ");
-  delay(60000);
+  lcd.print("loading...         ");
   ArduinoCloud.begin(ArduinoIoTPreferredConnection);
   lcd.clear();
   setDebugMessageLevel(2);
@@ -110,9 +124,8 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Ready to Go!");
 
-  double gas = analogRead(sensor);
-  double vO = gas * (3.3 / 4095);
-  rO = (rL * (3.3 - vO)) / vO;
+  rO = calibrateRO();
+
   delay(1000);
   lcd.clear();
 }
@@ -121,10 +134,8 @@ void loop() {
   ArduinoCloud.update();
   loopFunc();
   delay(500);
-  if((connectionStartTime - millis()) > 86400000 && !calibrated){
+  if((millis() - connectionStartTime) > 86400000 && !calibrated){
     calibrated = true;
-    double gas = analogRead(sensor);
-    double vO = gas * (3.3 / 4095);
-    rO = (rL * (3.3 - vO)) / vO;
+    rO = calibrateRO();
   }
 }
