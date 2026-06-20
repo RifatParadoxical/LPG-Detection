@@ -6,7 +6,7 @@
 
 = LPG Gas Leakage Detection
 
-Small ESP32-based gas leakage detection project that reads an MQ-series gas sensor, reports PPM on a 16x2 I2C LCD and (optionally) to Arduino Cloud. The sketch includes a simple alarm sound via the ESP32 DAC when gas levels rise.
+Small ESP32-based gas leakage detection project that reads an MQ-series gas sensor, reports PPM on a 16x2 I2C LCD and (optionally) to Arduino Cloud. The sketch includes a simple alarm sound via the ESP32 BLE when gas levels rise.
 
 image::assests/photo_6159094900922716418_y.jpg[Gas leakage detection setup, width=600]
 
@@ -19,29 +19,27 @@ This repository contains the Arduino sketch and supporting files used to detect 
 - Reads gas sensor on analog input and computes PPM
 - Displays readings and status on a 16x2 I2C LCD (0x27)
 - Optional Arduino Cloud integration (via `thingProperties.h`)
-- Plays alarm audio via ESP32 DAC when gas levels exceed thresholds
+- Plays alarm audio via ESP32 BLE when gas levels exceed thresholds
 
 == Hardware Required
 
 - ESP32 development board (or equivalent with ADC and DAC)
 - MQ-series gas sensor (e.g., MQ-5 or MQ-2)
 - 16x2 I2C LCD (default address 0x27)
-- Small speaker or amplifier connected to the ESP32 DAC pin (optional)
 - Wires, breadboard, 3.3V power supply
 
 == Wiring (as used by the sketch)
 
 - Gas sensor analog output -> GPIO35 (ADC input used in the sketch)
 - I2C LCD SDA -> GPIO13, SCL -> GPIO14 (Wire.begin(13,14))
-- Speaker / DAC output -> GPIO25 (DAC output used to play PCM samples)
 - Sensor VCC -> 3.3V (do NOT power MQ sensors from 5V when using ESP32 3.3V domain without level shifting)
 - All grounds connected together
 
 == Software Requirements
 
-- Arduino IDE or PlatformIO
+- Arduino IDE / VSCode+Arduino-CLI
 - ESP32 board support installed (for Arduino IDE)
-- Libraries (install via Library Manager or PlatformIO):
+- Libraries (install via Library Manager):
   - Wire
   - LiquidCrystal_I2C
   - ArduinoIoTCloud (used if you enable cloud features)
@@ -52,7 +50,7 @@ This repository contains the Arduino sketch and supporting files used to detect 
 2. Install required libraries listed above.
 3. Create `arduino_secrets.h` (this file is intentionally excluded from the repository; see "Secrets and configuration" below).
 4. Open `Gas_leakage_detection_jun05a.ino` in the Arduino IDE.
-5. Select the correct ESP32 board and COM port, then upload.
+5. Select the correct ESP32 board and COM/USB port, then upload.
 6. Open Serial Monitor at `115200` to view debug output. Wait ~60 seconds for the sensor warm-up period (the sketch shows "MQ-5 Heating Up!!").
 
 == Secrets and configuration
@@ -75,18 +73,14 @@ The repository does NOT include `arduino_secrets.h` (it contains WiFi/cloud cred
 - `thingProperties.h` - Arduino Cloud properties and bindings
 - `voices.h` - PCM samples used for alarm audio
 - `sketch.json` - Arduino/Project metadata
+- `sketch.yaml` - Arduino/Project yaml
 - `ReadMe.adoc` - This document
 - `arduino_secrets.h` - NOT included (confidential)
 
 == How it works (brief)
 
 The sketch reads an analog value from the sensor pin, converts it to a sensor resistance (RS), computes a ratio RS/RO (RO is measured during setup after the warm-up period) and converts that ratio into an estimated PPM value using a fitted curve. When PPM crosses thresholds the sketch plays an alarm and updates `Comment`/`PPM` values (exposed to the cloud via `thingProperties.h`).
-
-== Troubleshooting
-
-- "Error: RO is 0 !!" — indicates RO calibration failed; re-check wiring and ensure the sensor warmed up before calibration.
-- "Error: Sensor Disconnected?" — check analog wiring and power to the sensor.
-- If readings are unexpectedly low/high, verify sensor VCC (3.3V) and the ADC reference on your board.
+#Note: It's wise to use the previous version of wired speaker with remote access, instead of wireless and without remote connection.
 
 == Contributing
 

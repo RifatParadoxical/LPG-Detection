@@ -1,12 +1,13 @@
-#include "arduino_secrets.h"  // secret header file for WiFi credentials and other sensitive information
 #include <math.h>
-#include <WiFi.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include "thingProperties.h"
 #include "voices.h"
+#include "BluetoothA2DPSource.h"
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+BluetoothA2DPSource a2dp;
+unsigned int dataPlayTrack = 0;
+volatile bool toggleplay = false;
 
 #define sensor 35
 double rL = 20.0;
@@ -14,15 +15,12 @@ double b = -0.5;
 double yOne = -0.3980;
 double xOne = 2.9030;
 double rO = 0;
-int calibrated = false;
+bool calibrated = false;
 unsigned long long connectionStartTime = 0;
+unsigned long lastLoopTime = 0;
 
-void onCommentChange(){
-  //
-}
-void onPpmChange(){
-  //
-}
+// void onCommentChange(){}
+// void onPpmChange(){}
 
 double calibrateRO() {
   double gas = analogRead(sensor);
@@ -34,11 +32,25 @@ double calibrateRO() {
   return rO;
 }
 
-void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN){
-    for(int i = 0; i < sp_CRITICAL_LEN; i++){
-        dacWrite(25, pgm_read_byte(&(sp_CRITICAL[i])));
-        delayMicroseconds(1000000 / 16000);
+long int playVoice(Frame* data, long int len){
+  for(long int i = 0; i < len; i++){
+  if(toggleplay){
+    if((dataPlayTrack/3) >= sp_CRITICAL_LEN){
+      dataPlayTrack = 0;
+      toggleplay = false;
+    } else {
+      int16_t value = pgm_read_byte(&(sp_CRITICAL[(dataPlayTrack/3)]));
+      data[i].channel1 = value;
+      data[i].channel2 = value;
+      dataPlayTrack++;
     }
+  } else {
+    data[i].channel1 = 125;
+    data[i].channel2 = 125;
+  }
+
+  }
+  return len;
 }
 
 void loopFunc() {
@@ -52,18 +64,18 @@ void loopFunc() {
   double rS = (rL * (3.3 - vS)) / vS;
 
   if (rO == 0) {
-    Comment = "Error: RO is 0!!";
-    Serial.println("Error: RO is 0 !!");
+    //Comment = "Error: RO is 0!!";
+    Serial.println(F("Error: RO is 0 !!"));
   }
 
   else if (vS <= 0.1) {
-    Comment = "Error: Sensor Disconnected?";
-    Serial.println("Error: Sensor Disconected?");
+    //Comment = "Error: Sensor Disconnected?";
+    Serial.println(F("Error: Sensor Disconected?"));
   }
 
   else if (rS / rO <= 0) {
-    Comment = "Error: Invalid Ratio of RS/RO.";
-    Serial.println("Error: Invalid Ratio of RS/RO.");
+    //Comment = "Error: Invalid Ratio of RS/RO.";
+    Serial.println(F("Error: Invalid Ratio of RS/RO."));
   }
 
   else {
@@ -71,69 +83,76 @@ void loopFunc() {
     double y = log10(result);
     double log_x = ((y - yOne) / b) + xOne;
     double x = pow(10, log_x);
-    String msg = "";
+    // String msg = "";
 
     if (x < 500) {
-      msg = "Air is normal";
+      // msg = "Air is normal";
     } else if (x >= 500 && x < 5000) {
-      playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      msg = "Slight Gas leakage detected. Check area.";
+      toggleplay = true;
+      // msg = "Slight Gas leakage detected. Check area.";
     } else if (x > 5000) {
-      playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      msg = "Alarming rise of Gas presence! Open Windows.";
+      toggleplay = true;
+      // msg = "Alarming rise of Gas presence! Open Windows.";
     } else {
-      msg = "Something went wrong! Check the Sensor.";
+      // msg = "Something went wrong! Check the Sensor.";
     }
-    PPM = x;
-    Comment = msg;
+    // PPM = x;
+    //Comment = msg;
     lcd.setCursor(0, 0);
     lcd.print("Gas in Air(PPM):      ");
     lcd.setCursor(0, 1);
     lcd.print(x);
     lcd.print("           ");
-    Serial.print("Reading Sensor: ");
+    Serial.print(F("Reading Sensor: "));
     Serial.println(gas_value);
-    Serial.print("VS: ");
-    Serial.print(vS);
-    Serial.print(" | RS: ");
-    Serial.print(rS);
-    Serial.print(" | log of X: ");
-    Serial.println(log_x);
-    Serial.print("Gas presence in Air (in PPM): ");
-    Serial.println(x);
   }
 }
 
 void setup() {
-  initProperties();
+  // initProperties();
   Wire.begin(13,14);
   lcd.init();
   lcd.backlight();
   Serial.begin(115200);
-  Serial.println("MQ-5 Heating Up!!");
+  Serial.println(F("MQ-5 Heating Up!!"));
   lcd.setCursor(0, 0);
   lcd.print("MQ-5 Heating Up!    ");
   lcd.setCursor(0, 1);
   lcd.print("loading...         ");
-  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+  // ArduinoCloud.begin(ArduinoIoTPreferredConnection);
   lcd.clear();
-  setDebugMessageLevel(2);
-  ArduinoCloud.printDebugInfo();
+  // setDebugMessageLevel(2);
+  // ArduinoCloud.printDebugInfo();
   lcd.setCursor(0, 0);
-  lcd.print("Getting Ready...");
+  lcd.print("Ready to Go!      ");
   lcd.setCursor(0, 1);
-  lcd.print("Ready to Go!");
+  lcd.print("Trying to connect BT...   ");
+  vTaskDelay(12000);
+  a2dp.set_auto_reconnect(true);
+  a2dp.start("T20", playVoice);
+  a2dp.set_volume(100);
 
+  vTaskDelay(3000);
   rO = calibrateRO();
 
-  delay(1000);
+  while(!a2dp.is_connected()){
+    vTaskDelay(200);
+    Serial.println(F("Waiting for Bluetooth Connection..."));
+  }
+  Serial.println(F("Bluetooth Connected!"));
   lcd.clear();
 }
 
 void loop() {
-  ArduinoCloud.update();
-  loopFunc();
-  delay(500);
+  // ArduinoCloud.update();
+  if (millis() - lastLoopTime >= 500) {
+    lastLoopTime = millis();
+    loopFunc();
+    if (!a2dp.is_connected()) {
+      a2dp.reconnect();
+      Serial.println(F("Bluetooth Disconnected! Attempting to Reconnect..."));
+    }
+  }
   if((millis() - connectionStartTime) > 86400000 && !calibrated){
     calibrated = true;
     rO = calibrateRO();
