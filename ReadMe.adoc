@@ -9,6 +9,8 @@
 Small ESP32-based gas leakage detection project that reads an MQ-series gas sensor, reports PPM on a 16x2 I2C LCD and (optionally) to Arduino Cloud. The sketch includes a simple alarm sound via the ESP32 BLE when gas levels rise.
 
 image::assests/photo_6159094900922716418_y.jpg[Gas leakage detection setup, width=600]
+image::assests/6179310908258062961.jpg[Gas leakage detection summary and graph, width=600]
+image::assests/6179310908258062959.jpg[Gas leakage detection alarm, width=600]
 
 == Overview
 
@@ -58,13 +60,12 @@ This repository contains the Arduino sketch and supporting files used to detect 
 The repository does NOT include `arduino_secrets.h` (it contains WiFi/cloud credentials and other sensitive information). Do not commit that file. Create it locally with your credentials. Example template (adjust to your cloud/credentials expectations):
 
 ----
-// arduino_secrets.h (DO NOT COMMIT)
-#ifndef ARDUINO_SECRETS_H
-#define ARDUINO_SECRETS_H
-#define SECRET_SSID "your-ssid"
-#define SECRET_PASS "your-password"
-// Add any additional secrets required by your `thingProperties.h` or cloud setup
-#endif
+// arduino_secrets.h (DIDN'T COMMITED)
+#define SECRET_DEVICE_KEY "SECRET_DEVICE_KEY"
+#define SECRET_OPTIONAL_PASS "Your_Password"
+#define SECRET_SSID "Your_SSID"
+#define PushBullet_Access_Token "PushBullet_Access_Token"
+
 ----
 
 == Files in this repository
@@ -81,6 +82,10 @@ The repository does NOT include `arduino_secrets.h` (it contains WiFi/cloud cred
 
 The sketch reads an analog value from the sensor pin, converts it to a sensor resistance (RS), computes a ratio RS/RO (RO is measured during setup after the warm-up period) and converts that ratio into an estimated PPM value using a fitted curve. When PPM crosses thresholds the sketch plays an alarm and updates `Comment`/`PPM` values (exposed to the cloud via `thingProperties.h`).
 #Note: It's wise to use the previous version of wired speaker with remote access, instead of wireless and without remote connection.
+
+== Before Integrating
+
+Please Download `Arduino IOT Remote` and `PushBullet` mobile app and set your configurations and everything properly to get best outcome and you can access from anywhere.
 
 == Contributing
 
