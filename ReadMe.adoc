@@ -6,7 +6,7 @@
 
 = LPG Gas Leakage Detection
 
-Small ESP32-based gas leakage detection project that reads an MQ-series gas sensor, reports PPM on a 16x2 I2C LCD and (optionally) to Arduino Cloud. The sketch includes a simple alarm sound via the ESP32 BLE when gas levels rise.
+Small ESP32-based gas leakage detection project that reads an MQ-series gas sensor, reports PPM on a 16x2 I2C LCD and (optionally) to Arduino Cloud. The sketch includes a simple alarm sound via wired speaker and Pushbullet powered mobile and desktop device notification when gas levels rise.
 
 image::assests/photo_6159094900922716418_y.jpg[Gas leakage detection setup, width=600]
 image::assests/6179310908258062961.jpg[Gas leakage detection summary and graph, width=600]
