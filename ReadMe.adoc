@@ -21,7 +21,7 @@ This repository contains the Arduino sketch and supporting files used to detect 
 - Reads gas sensor on analog input and computes PPM
 - Displays readings and status on a 16x2 I2C LCD (0x27)
 - Optional Arduino Cloud integration (via `thingProperties.h`)
-- Plays alarm audio via ESP32 BLE when gas levels exceed thresholds
+- Plays alarm audio when gas levels exceed normal air limits
 - Regulated Device notification with 60/20 sec break accrodingly
 - Filtered alarm to get rid of uncertain alarm
 
@@ -30,12 +30,14 @@ This repository contains the Arduino sketch and supporting files used to detect 
 - ESP32 development board (or equivalent with ADC and DAC)
 - MQ-series gas sensor (e.g., MQ-5 or MQ-2)
 - 16x2 I2C LCD (default address 0x27)
+- Speaker connected with amplifier module
 - Wires, breadboard, 3.3V power supply
 
 == Wiring (as used by the sketch)
 
 - Gas sensor analog output -> GPIO35 (ADC input used in the sketch)
 - I2C LCD SDA -> GPIO13, SCL -> GPIO14 (Wire.begin(13,14))
+- Amplifier (+) -> GPIO25, Amplifier (+) -> Speaker (+)
 - Sensor VCC -> 3.3V (do NOT power MQ sensors from 5V when using ESP32 3.3V domain without level shifting)
 - All grounds connected together
 
@@ -99,5 +101,5 @@ This project is released under the MIT License.
 
 == Contact
 
-Author: rifatparadoxical
+Author: rifatparadoxical + 
 Email: muhammadrifat67@gmail.com
