@@ -17,6 +17,10 @@ double xOne = 2.9030;
 double rO = 0;
 int calibrated = false;
 unsigned long long connectionStartTime = 0;
+unsigned long long lastNotificationSlight = 0;
+unsigned long long lastNotificationDanger = 0;
+unsigned long long lastAlertTime = 0;
+int alertFiltering = 0;
 
 void onCommentChange(){
   //
@@ -104,17 +108,37 @@ void loopFunc() {
       lcd.print("Air is normal          ");
       lcd.setCursor(0,1);
       lcd.print("                       ");
-    } else if (x >= 200 && x < 2000) {
+    } else if (x >= 200 && x < 2000 && alertFiltering > 5) {
       playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      sendNotification("Gas Leakage Detected!", "Slight Gas leakage detected. Check area.");
+      if((millis() - lastNotificationSlight) > 60000){
+        lastNotificationSlight = millis();
+        sendNotification("Gas Leakage Detected!", "Slight Gas leakage detected. Check area.");
+      }
       msg = "Slight Gas leakage detected. Check area.";
       lcd.setCursor(0,0);
       lcd.print("Slight Gas leak         ");
       lcd.setCursor(0,1);
       lcd.print("Detected!Check area.    ");
-    } else if (x > 2000) {
+    } else if (x > 2000 && alertFiltering > 5) {
       playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      sendNotification("Gas Leakage Detected!", "Alarming rise of Gas presence! Open Windows.");
+      if((millis() - lastNotificationDanger) > 20000){
+        lastNotificationDanger = millis();
+        sendNotification("Gas Leakage Detected!", "Alarming rise of Gas presence! Open Windows.");
+      }
+      msg = "Alarming rise of Gas presence! Open Windows.";
+      lcd.setCursor(0,0);
+      lcd.print("Gas leak Alarm!       ");
+      lcd.setCursor(0,1);
+      lcd.print("Vantile area.          ");
+    } else if (x >= 200 && x < 2000 && alertFiltering <= 5) {
+      alertFiltering++;
+      msg = "Slight Gas leakage detected. Check area.";
+      lcd.setCursor(0,0);
+      lcd.print("Slight Gas leak         ");
+      lcd.setCursor(0,1);
+      lcd.print("Detected!Check area.    ");
+    } else if (x > 2000 && alertFiltering <= 5) {
+      alertFiltering++;
       msg = "Alarming rise of Gas presence! Open Windows.";
       lcd.setCursor(0,0);
       lcd.print("Gas leak Alarm!       ");
@@ -177,5 +201,9 @@ void loop() {
   if((millis() - connectionStartTime) > 86400000 && !calibrated){
     calibrated = true;
     rO = calibrateRO();
+  }
+  if((millis() - lastAlertTime) > 60000 && alertFiltering > 0){
+    alertFiltering = 0;
+    lastAlertTime = millis();
   }
 }

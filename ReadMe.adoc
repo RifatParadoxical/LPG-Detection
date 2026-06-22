@@ -22,6 +22,8 @@ This repository contains the Arduino sketch and supporting files used to detect 
 - Displays readings and status on a 16x2 I2C LCD (0x27)
 - Optional Arduino Cloud integration (via `thingProperties.h`)
 - Plays alarm audio via ESP32 BLE when gas levels exceed thresholds
+- Regulated Device notification with 60/20 sec break accrodingly
+- Filtered alarm to get rid of uncertain alarm
 
 == Hardware Required
 
