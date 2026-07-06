@@ -4,8 +4,10 @@
 #include <Wire.h>
 #include <HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
-#include "thingProperties.h"
 #include "voices.h"
+
+const char* ssid = SECRET_SSID;
+const char* password = SECRET_PASS;
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
@@ -15,19 +17,13 @@ double b = -0.5;
 double yOne = -0.3980;
 double xOne = 2.9030;
 double rO = 0;
+int status = 0;
 int calibrated = false;
-unsigned long long connectionStartTime = 0;
-unsigned long long lastNotificationSlight = 0;
-unsigned long long lastNotificationDanger = 0;
-unsigned long long lastAlertTime = 0;
-int alertFiltering = 0;
 
-void onCommentChange(){
-  //
-}
-void onPpmChange(){
-  //
-}
+unsigned long long wifiStatus = 0;
+unsigned long long connectionStartTime = 0;
+unsigned long long lastAlertFiltered = 0;
+int alertFiltering = 0;
 
 double calibrateRO() {
   double gas = analogRead(sensor);
@@ -39,16 +35,34 @@ double calibrateRO() {
   return rO;
 }
 
-void sendNotification(String title, String message){
-  if(WiFi.status() == WL_CONNECTED){
+void sendData(double x, int status){
+   if (WiFi.status() != WL_CONNECTED)
+        return;
+
     HTTPClient http;
-    http.begin("https://api.pushbullet.com/v2/pushes");
+
+    if (!http.begin("http://172.25.141.198:3000/api/sensor")) {
+        return;
+    }
+
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Access-Token", PushBullet_Access_Token);
-    String payload = "{\"type\":\"note\",\"title\":\"" + title + "\",\"body\":\"" + message + "\"}";
-    http.POST(payload);
+    String json =
+        "{\"ppm\":"
+        + String(x, 2)
+        + ",\"status\":"
+        + String(status)
+        + "}";
+
+
+    if (response > 0) {
+        Serial.print("Server response: ");
+        Serial.println(response);
+    } else {
+        Serial.print("HTTP Error: ");
+        Serial.println(response);
+    }
     http.end();
-  }
+
 }
 
 void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN){
@@ -69,7 +83,6 @@ void loopFunc() {
   double rS = (rL * (3.3 - vS)) / vS;
 
   if (rO == 0) {
-    Comment = "Error: RO is 0!!";
     Serial.println("Error: RO is 0 !!");
     lcd.setCursor(0,0);
     lcd.print("Error: RO is 0!!     ");
@@ -78,7 +91,6 @@ void loopFunc() {
   }
 
   else if (vS <= 0.1) {
-    Comment = "Error: Sensor Disconnected?";
     Serial.println("Error: Sensor Disconected?");
     lcd.setCursor(0,0);
     lcd.print("Error: Sensor        ");
@@ -87,7 +99,6 @@ void loopFunc() {
   }
 
   else if (rS / rO <= 0) {
-    Comment = "Error: Invalid Ratio of RS/RO.";
     Serial.println("Error: Invalid Ratio of RS/RO.");
     lcd.setCursor(0,0);
     lcd.print("Error: Invalid Ratio  ");
@@ -100,66 +111,56 @@ void loopFunc() {
     double y = log10(result);
     double log_x = ((y - yOne) / b) + xOne;
     double x = pow(10, log_x);
-    String msg = "";
 
     if (x < 200) {
-      msg = "Air is normal";
       lcd.setCursor(0,0);
       lcd.print("Air is normal          ");
       lcd.setCursor(0,1);
       lcd.print("                       ");
+      status = 0;
     } else if (x >= 200 && x < 2000 && alertFiltering > 5) {
+      status = 1;
       playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      if((millis() - lastNotificationSlight) > 60000){
-        lastNotificationSlight = millis();
-        sendNotification("Gas Leakage Detected!", "Slight Gas leakage detected. Check area.");
-      }
-      msg = "Slight Gas leakage detected. Check area.";
       lcd.setCursor(0,0);
       lcd.print("Slight Gas leak         ");
       lcd.setCursor(0,1);
       lcd.print("Detected!Check area.    ");
     } else if (x > 2000 && alertFiltering > 5) {
+      status = 2;
       playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      if((millis() - lastNotificationDanger) > 20000){
-        lastNotificationDanger = millis();
-        sendNotification("Gas Leakage Detected!", "Alarming rise of Gas presence! Open Windows.");
-      }
-      msg = "Alarming rise of Gas presence! Open Windows.";
       lcd.setCursor(0,0);
       lcd.print("Gas leak Alarm!       ");
       lcd.setCursor(0,1);
-      lcd.print("Vantile area.          ");
+      lcd.print("Vantilate area.          ");
     } else if (x >= 200 && x < 2000 && alertFiltering <= 5) {
+      status = 1;
       alertFiltering++;
-      msg = "Slight Gas leakage detected. Check area.";
       lcd.setCursor(0,0);
       lcd.print("Slight Gas leak         ");
       lcd.setCursor(0,1);
       lcd.print("Detected!Check area.    ");
     } else if (x > 2000 && alertFiltering <= 5) {
+      status = 2;
       alertFiltering++;
-      msg = "Alarming rise of Gas presence! Open Windows.";
       lcd.setCursor(0,0);
       lcd.print("Gas leak Alarm!       ");
       lcd.setCursor(0,1);
-      lcd.print("Vantile area.          ");
+      lcd.print("Vantilate area.          ");
     } else {
-      msg = "Something went wrong! Check the Sensor.";
       lcd.setCursor(0,0);
       lcd.print("Something wrong!       ");
       lcd.setCursor(0,1);
       lcd.print("Check the Sensor.      ");
     }
-    PPM = x;
-    Comment = msg;
+
+    sendData(x, status);
     Serial.print("Reading Sensor: ");
     Serial.println(gas_value);
     Serial.print("VS: ");
     Serial.print(vS);
     Serial.print(" | RS: ");
     Serial.print(rS);
-    Serial.print(" | log of X: ");
+    Serial.print(" | log of x: ");
     Serial.println(log_x);
     Serial.print("Gas presence in Air (in PPM): ");
     Serial.println(x);
@@ -167,7 +168,7 @@ void loopFunc() {
 }
 
 void setup() {
-  initProperties();
+  WiFi.begin(ssid, password);
   Wire.begin(13,14);
   lcd.init();
   lcd.backlight();
@@ -178,10 +179,9 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("loading...         ");
   delay(10000);
-  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+
   lcd.clear();
-  setDebugMessageLevel(2);
-  ArduinoCloud.printDebugInfo();
+
   lcd.setCursor(0, 0);
   lcd.print("Getting Ready...");
   lcd.setCursor(0, 1);
@@ -195,15 +195,23 @@ void setup() {
 }
 
 void loop() {
-  ArduinoCloud.update();
+  if (millis() - wifiStatus >= 4000) {
+    wifiStatus = millis();
+
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi not connected. Reconnecting...");
+      WiFi.begin(ssid, password); 
+    }
+  }
+
   loopFunc();
-  delay(250);
+  delay(1000);
   if((millis() - connectionStartTime) > 86400000 && !calibrated){
     calibrated = true;
     rO = calibrateRO();
   }
-  if((millis() - lastAlertTime) > 60000 && alertFiltering > 0){
+  if((millis() - lastAlertFiltered) > 60000 && alertFiltering > 0){
     alertFiltering = 0;
-    lastAlertTime = millis();
+    lastAlertFiltered = millis();
   }
 }
