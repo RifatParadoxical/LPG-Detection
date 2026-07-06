@@ -117,7 +117,9 @@ app.get("/api/history", async (req, res) => {
 });
 
 try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    if (mongoose.connection.readyState === 0) {
+        await mongoose.connect(process.env.MONGODB_URI);
+    }
 
     console.log("✅ Connected to MongoDB");
 } catch (err) {
