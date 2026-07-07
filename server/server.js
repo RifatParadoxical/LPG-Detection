@@ -55,14 +55,14 @@ app.post("/api/sensor", async (req, res) => {
 
     if ( 
         !lastHistory ||
-        sensorData.time - lastHistory.time >= 5 * 60 * 1000
+        sensorData.time - lastHistory.time >= 5000
     ) {
         await History.create(sensorData);
     }
 
-    // Keep only last 8640 records, that means last 1 month data
+    // Keep only last 518400 records, that means last 1 month data
     const count = await History.countDocuments();
-    if (count > 8640) {
+    if (count > 518400) {
         const oldest = await History.findOne().sort({ time: 1 });
         await History.findByIdAndDelete(oldest._id);
     }

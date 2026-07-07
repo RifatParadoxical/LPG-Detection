@@ -41,7 +41,7 @@ void sendData(double x, int status){
 
     HTTPClient http;
 
-    if (!http.begin("http://172.25.141.198:3000/api/sensor")) {
+    if (!http.begin("https://lpg-detection.vercel.app/api/sensor")) {
         return;
     }
 
