@@ -20,24 +20,23 @@ app.get("/", (req, res) => {
 
 app.post("/api/sensor", async (req, res) => {
     try{
-            const { ppm, status } = req.body;
+            const { status } = req.body;
 
-    if (ppm === undefined || status === undefined) {
+    if (status === undefined) {
         return res.status(400).json({
             success: false,
-            message: "ppm and status are required"
+            message: "status is required"
         });
     }
 
-    if (typeof ppm !== "number" || typeof status !== "number") {
+    if (typeof status !== "number") {
         return res.status(400).json({
             success: false,
-            message: "ppm and status must be numbers"
+            message: "status must be a number"
         });
     }
 
     const sensorData = {
-        ppm,
         status,
         time: new Date()
     };
