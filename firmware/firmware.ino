@@ -1,58 +1,43 @@
 #include "arduino_secrets.h" 
-#include <math.h>
 #include <WiFi.h>
 #include <Wire.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <LiquidCrystal_I2C.h>
 #include "voices.h"
 
 const char* ssid = SECRET_SSID;
 const char* password = SECRET_PASS;
+const char* hostname = "ESP-GAS-DETECTION-DEVICE";
 
+WiFiClientSecure client;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-#define sensor 35
-double rL = 20.0;
-double b = -0.5;
-double yOne = -0.3980;
-double xOne = 2.9030;
-double rO = 0;
-int status = 0;
-int calibrated = false;
-
+#define SENSOR 35
+volatile bool status = false;
+volatile bool statusChanged = false;
+volatile bool need2Change = false;
+unsigned long lastInterruptTime = 0;
 unsigned long long wifiStatus = 0;
-unsigned long long connectionStartTime = 0;
-unsigned long long lastAlertFiltered = 0;
-int alertFiltering = 0;
 
-double calibrateRO() {
-  double gas = analogRead(sensor);
-  if (gas < 248.18) {
-    gas = 248.18;
-  }
-  double vO = gas * (3.3 / 4095);
-  rO = (rL * (3.3 - vO)) / vO;
-  return rO;
-}
-
-void sendData(double x, int status){
-   if (WiFi.status() != WL_CONNECTED)
-        return;
+void sendData(){
+  int response = 0;
+   if (WiFi.status() != WL_CONNECTED)  return;
 
     HTTPClient http;
 
-    if (!http.begin("https://lpg-detection.vercel.app/api/sensor")) {
+    if (!http.begin(client, "https://lpg-detection.vercel.app/device/" + String(SECRET_DEVICE_KEY) + "/api/sensor")) {
         return;
     }
 
     http.addHeader("Content-Type", "application/json");
     String json =
-        "{\"ppm\":"
-        + String(x, 2)
-        + ",\"status\":"
+        "{\"status\":"
         + String(status)
         + "}";
 
+
+    response = http.POST(json);
 
     if (response > 0) {
         Serial.print("Server response: ");
@@ -70,148 +55,82 @@ void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN){
         dacWrite(25, pgm_read_byte(&(sp_CRITICAL[i])));
         delayMicroseconds(1000000 / 16000);
     }
+    delay(500);
 }
 
-void loopFunc() {
-  double gas_value = analogRead(sensor);
-
-  if (gas_value < 248.18) {
-    gas_value = 248.18;
-  }
-
-  double vS = gas_value * (3.3 / 4095);
-  double rS = (rL * (3.3 - vS)) / vS;
-
-  if (rO == 0) {
-    Serial.println("Error: RO is 0 !!");
-    lcd.setCursor(0,0);
-    lcd.print("Error: RO is 0!!     ");
-    lcd.setCursor(0,1);
-    lcd.print("Check the Sensor.     ");
-  }
-
-  else if (vS <= 0.1) {
-    Serial.println("Error: Sensor Disconected?");
-    lcd.setCursor(0,0);
-    lcd.print("Error: Sensor        ");
-    lcd.setCursor(0,1);
-    lcd.print("Disconnected?        ");
-  }
-
-  else if (rS / rO <= 0) {
-    Serial.println("Error: Invalid Ratio of RS/RO.");
-    lcd.setCursor(0,0);
-    lcd.print("Error: Invalid Ratio  ");
-    lcd.setCursor(0,1);
-    lcd.print("of RS/RO.            ");
-  }
-
-  else {
-    double result = rS / rO;
-    double y = log10(result);
-    double log_x = ((y - yOne) / b) + xOne;
-    double x = pow(10, log_x);
-
-    if (x < 200) {
-      lcd.setCursor(0,0);
-      lcd.print("Air is normal          ");
-      lcd.setCursor(0,1);
-      lcd.print("                       ");
-      status = 0;
-    } else if (x >= 200 && x < 2000 && alertFiltering > 5) {
-      status = 1;
-      playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      lcd.setCursor(0,0);
-      lcd.print("Slight Gas leak         ");
-      lcd.setCursor(0,1);
-      lcd.print("Detected!Check area.    ");
-    } else if (x > 2000 && alertFiltering > 5) {
-      status = 2;
-      playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
-      lcd.setCursor(0,0);
-      lcd.print("Gas leak Alarm!       ");
-      lcd.setCursor(0,1);
-      lcd.print("Vantilate area.          ");
-    } else if (x >= 200 && x < 2000 && alertFiltering <= 5) {
-      status = 1;
-      alertFiltering++;
-      lcd.setCursor(0,0);
-      lcd.print("Slight Gas leak         ");
-      lcd.setCursor(0,1);
-      lcd.print("Detected!Check area.    ");
-    } else if (x > 2000 && alertFiltering <= 5) {
-      status = 2;
-      alertFiltering++;
-      lcd.setCursor(0,0);
-      lcd.print("Gas leak Alarm!       ");
-      lcd.setCursor(0,1);
-      lcd.print("Vantilate area.          ");
-    } else {
-      lcd.setCursor(0,0);
-      lcd.print("Something wrong!       ");
-      lcd.setCursor(0,1);
-      lcd.print("Check the Sensor.      ");
-    }
-
-    sendData(x, status);
-    Serial.print("Reading Sensor: ");
-    Serial.println(gas_value);
-    Serial.print("VS: ");
-    Serial.print(vS);
-    Serial.print(" | RS: ");
-    Serial.print(rS);
-    Serial.print(" | log of x: ");
-    Serial.println(log_x);
-    Serial.print("Gas presence in Air (in PPM): ");
-    Serial.println(x);
-  }
+void IRAM_ATTR onChangeFunction() {
+  unsigned long now = millis();
+  if (now - lastInterruptTime < 500) return;
+  lastInterruptTime = now;
+  status = (digitalRead(SENSOR) == HIGH);
+  statusChanged = true;
 }
 
 void setup() {
+  client.setInsecure();
+  WiFi.hostname(hostname);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
-  Wire.begin(13,14);
+  Wire.begin(13,14); // SDA, SCL
+  pinMode(SENSOR, INPUT);
+  attachInterrupt(digitalPinToInterrupt(SENSOR), onChangeFunction, CHANGE);
   lcd.init();
   lcd.backlight();
   Serial.begin(115200);
+  delay(2000);
   Serial.println("MQ-5 Heating Up!!");
   lcd.setCursor(0, 0);
   lcd.print("MQ-5 Heating Up!    ");
   lcd.setCursor(0, 1);
   lcd.print("loading...         ");
-  delay(10000);
+  // delay(10000);
 
   lcd.clear();
-
   lcd.setCursor(0, 0);
   lcd.print("Getting Ready...");
   lcd.setCursor(0, 1);
   lcd.print("Ready to Go!");
-  delay(5000);
-
-  rO = calibrateRO();
-
-  delay(1000);
+  delay(3000);
   lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Air is Normal.     ");
+  lcd.setCursor(0, 0);
+  lcd.print(String(SECRET_DEVICE_KEY));
+  status = (digitalRead(SENSOR) == HIGH);
+  sendData();
 }
 
 void loop() {
-  if (millis() - wifiStatus >= 4000) {
+  if ((millis() - wifiStatus >= 15000)&&(WiFi.status() != WL_CONNECTED)) {
     wifiStatus = millis();
+    Serial.println("WiFi not connected. Reconnecting...");
+    lcd.setCursor(0, 1);
+    lcd.print("WiFi issue.          ");
+    WiFi.disconnect();
+    WiFi.reconnect();
+  } else if(WiFi.status() == WL_CONNECTED) {
+    lcd.setCursor(0, 1);
+    lcd.print("                ");
+  }
 
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi not connected. Reconnecting...");
-      WiFi.begin(ssid, password); 
+  if(statusChanged){
+    statusChanged = false;
+    need2Change = true;
+    if(status){
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Gas detected!!     ");
+    } else {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Air is Normal.     ");
     }
   }
-
-  loopFunc();
-  delay(1000);
-  if((millis() - connectionStartTime) > 86400000 && !calibrated){
-    calibrated = true;
-    rO = calibrateRO();
+  if(status){
+    playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
   }
-  if((millis() - lastAlertFiltered) > 60000 && alertFiltering > 0){
-    alertFiltering = 0;
-    lastAlertFiltered = millis();
+  if(need2Change){
+    sendData();
+    need2Change = false;
   }
 }

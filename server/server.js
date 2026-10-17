@@ -10,15 +10,24 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const DEVICE_KEY_ONE = process.env.SECRET_DEVICE_KEY_ONE;
 
 app.use(cors());
 app.use(express.json());
 
+if (!DEVICE_KEY_ONE) {
+    throw new Error("SECRET_DEVICE_KEY_ONE is missing");
+}
+
+if (!process.env.MONGODB_URI) {
+    throw new Error("MONGODB_URI is missing");
+}
+
 app.get("/", (req, res) => {
-    res.send("Fire Detection API Running");
+    res.send("Fire Detection API Up & Running");
 });
 
-app.post("/api/sensor", async (req, res) => {
+app.post(`/device/${DEVICE_KEY_ONE}/api/sensor`, async (req, res) => {
     try{
             const { status } = req.body;
 
@@ -80,7 +89,7 @@ app.post("/api/sensor", async (req, res) => {
 
 });
 
-app.get("/api/latest", async (req, res) => {
+app.get(`/device/${DEVICE_KEY_ONE}/api/latest`, async (req, res) => {
     try {
         const latest = await Latest.findOne().lean();
         res.json({
@@ -97,7 +106,7 @@ app.get("/api/latest", async (req, res) => {
     
 });
 
-app.get("/api/history", async (req, res) => {
+app.get(`/device/${DEVICE_KEY_ONE}/api/history`, async (req, res) => {
     try {
         const history = await History.find().sort({ time: 1 }).lean();
         res.json({
