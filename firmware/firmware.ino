@@ -9,6 +9,7 @@
 const char* ssid = SECRET_SSID;
 const char* password = SECRET_PASS;
 const char* hostname = "ESP-GAS-DETECTION-DEVICE";
+const char* display_device_key = "id: " SECRET_DEVICE_KEY;
 
 WiFiClientSecure client;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -26,13 +27,16 @@ void sendData(){
 
     HTTPClient http;
 
-    if (!http.begin(client, "https://lpg-detection.vercel.app/device/" + String(SECRET_DEVICE_KEY) + "/api/sensor")) {
+    if (!http.begin(client, "https://lpg-detection.vercel.app/devices/" + String(SECRET_DEVICE_KEY) + "/api/sensor")) {
         return;
     }
 
     http.addHeader("Content-Type", "application/json");
     String json =
-        "{\"status\":"
+    "{\"device_id\":\""
+        + String(SECRET_DEVICE_KEY)
+        + "\","
+        "\"status\":"
         + String(status)
         + "}";
 
@@ -94,9 +98,8 @@ void setup() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Air is Normal.     ");
-  lcd.setCursor(0, 0);
-  lcd.print(String(SECRET_DEVICE_KEY));
-  status = (digitalRead(SENSOR) == HIGH);
+  lcd.setCursor(0, 1);
+  lcd.print(display_device_key);
   sendData();
 }
 
@@ -110,7 +113,7 @@ void loop() {
     WiFi.reconnect();
   } else if(WiFi.status() == WL_CONNECTED) {
     lcd.setCursor(0, 1);
-    lcd.print("                ");
+    lcd.print(display_device_key);
   }
 
   if(statusChanged){

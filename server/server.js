@@ -10,13 +10,16 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const DEVICE_KEY_ONE = process.env.SECRET_DEVICE_KEY_ONE;
+
+const VALID_DEVICE_KEYS = [
+    process.env.SECRET_DEVICE_KEY_ONE,
+].filter(Boolean);
 
 app.use(cors());
 app.use(express.json());
 
-if (!DEVICE_KEY_ONE) {
-    throw new Error("SECRET_DEVICE_KEY_ONE is missing");
+if (VALID_DEVICE_KEYS.length === 0) {
+    throw new Error("No SECRET_DEVICE_KEY_* found in env");
 }
 
 if (!process.env.MONGODB_URI) {
@@ -24,91 +27,115 @@ if (!process.env.MONGODB_URI) {
 }
 
 app.get("/", (req, res) => {
-    res.send("Fire Detection API Up & Running");
+    res.send("Fire Detection API UP & Running");
 });
 
-app.post(`/device/${DEVICE_KEY_ONE}/api/sensor`, async (req, res) => {
-    try{
-            const { status } = req.body;
+app.post('/devices/:device_key/api/sensor', async (req, res) => {
+    try {
+        const { device_id, status } = req.body;
 
-    if (status === undefined) {
-        return res.status(400).json({
-            success: false,
-            message: "status is required"
-        });
-    }
-
-    if (typeof status !== "number") {
-        return res.status(400).json({
-            success: false,
-            message: "status must be a number"
-        });
-    }
-
-    const sensorData = {
-        status,
-        time: new Date()
-    };
-
-    await Latest.findOneAndUpdate(
-        {},
-        sensorData,
-        {
-            upsert: true,
-            new: true
+        if (!VALID_DEVICE_KEYS.includes(req.params.device_key)) {
+            return res.status(401).json({
+                success: false,
+                message: "401 - Invalid device key"
+            });
         }
-    );
+        if (device_id == undefined || status === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: "400 - device id and status is required"
+            });
+        }
 
-    const lastHistory = await History.findOne().sort({ time: -1 });
+        // hehe
+        if (device_id !== req.params.device_key) {
+            return res.status(403).json({
+                success: false,
+                message: "403 - Authrization failed."
+            });
+        }
 
-    if ( 
-        !lastHistory ||
-        sensorData.time - lastHistory.time >= 5000
-    ) {
+        if (typeof status !== "number") {
+            return res.status(400).json({
+                success: false,
+                message: "400 - status must be a number"
+            });
+        }
+
+        if (typeof device_id !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "400 - device_id must be a string"
+            });
+        }
+
+        const sensorData = {
+            device_id,
+            status,
+            time: new Date()
+        };
+
+        await Latest.findOneAndUpdate(
+            { device_id: sensorData.device_id },
+            sensorData,
+            { upsert: true, new: true }
+        );
+
         await History.create(sensorData);
-    }
 
-    // Keep only last 518400 records, that means last 1 month data
-    const count = await History.countDocuments();
-    if (count > 518400) {
-        const oldest = await History.findOne().sort({ time: 1 });
-        await History.findByIdAndDelete(oldest._id);
-    }
-
-    res.json({
-        success: true,
-        message: "Sensor data stored successfully"
-    });
+        res.json({
+            success: true,
+            message: "Sensor data stored successfully"
+        });
     } catch (err) {
         console.error(err.message);
         res.status(500).json({
             success: false,
-            message: "Database error"
+            message: "500 - Database error"
         });
     }
 
 });
 
-app.get(`/device/${DEVICE_KEY_ONE}/api/latest`, async (req, res) => {
+app.get('/devices/:device_key/api/latest', async (req, res) => {
     try {
-        const latest = await Latest.findOne().lean();
+        if (!VALID_DEVICE_KEYS.includes(req.params.device_key)) {
+            return res.status(401).json({
+                success: false,
+                message: "401 - Invalid device key"
+            });
+        }
+
+        const latest = await Latest.findOne(
+            { device_id: req.params.device_key }
+        ).lean();
+
         res.json({
             success: true,
             data: latest
         });
+
     } catch (err) {
         console.error(err.message);
         res.status(500).json({
             success: false,
-            message: "Database error"
+            message: "500 - Database error"
         });
     }
-    
+
 });
 
-app.get(`/device/${DEVICE_KEY_ONE}/api/history`, async (req, res) => {
+app.get('/devices/:device_key/api/history', async (req, res) => {
     try {
-        const history = await History.find().sort({ time: 1 }).lean();
+        if (!VALID_DEVICE_KEYS.includes(req.params.device_key)) {
+            return res.status(401).json({
+                success: false,
+                message: "401 - Invalid device key"
+            });
+        }
+        const history = await History.find(
+            { device_id: req.params.device_key }
+        ).sort({ time: 1 }).lean();
         res.json({
             success: true,
             count: history.length,
@@ -118,7 +145,7 @@ app.get(`/device/${DEVICE_KEY_ONE}/api/history`, async (req, res) => {
         console.error(err.message);
         res.status(500).json({
             success: false,
-            message: "Database error"
+            message: "500 - Database error"
         });
     }
 
@@ -138,3 +165,7 @@ try {
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
+
+//yet two improvements can be made:
+// 1. Separate device identity from authentication
+// 2. Pagination on the history endpoint
