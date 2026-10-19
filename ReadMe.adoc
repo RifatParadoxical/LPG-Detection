@@ -1,105 +1,241 @@
 :Author: rifatparadoxical
 :Email: muhammadrifat67@gmail.com
-:Date: 2026-06-14
-:Revision: v2
+:Date: 2026-10-19
+:Revision: v3
 :License: MIT
 
 = LPG Gas Leakage Detection
 
-Small ESP32-based gas leakage detection project that reads an MQ-series gas sensor, reports PPM on a 16x2 I2C LCD and (optionally) to Arduino Cloud. The sketch includes a simple alarm sound via wired speaker and Pushbullet powered mobile and desktop device notification when gas levels rise.
+An ESP32 prototype that monitors the digital alarm output of an MQ-5 gas sensor module. It shows the current state on a 16x2 I2C LCD, plays an audio alert when the sensor output is HIGH, and sends state changes to an Express API backed by MongoDB.
 
-image::assests/photo_6159094900922716418_y.jpg[Gas leakage detection setup, width=600]
-image::assests/6179310908258062961.jpg[Gas leakage detection summary and graph, width=600]
-image::assests/6179310908258062959.jpg[Gas leakage detection alarm, width=600]
+This is an educational prototype, not a calibrated gas meter or a certified life-safety alarm. Do not use it as a replacement for approved LPG detectors, maintenance, or emergency procedures.
 
 == Overview
 
-This repository contains the Arduino sketch and supporting files used to detect LPG/gas leakage with an analog gas sensor (MQ-series). The project was developed for an ESP32 board and uses a 16x2 I2C LCD for local display.
+The firmware runs on an ESP32 and reads a digital signal from the gas sensor module. The module's onboard comparator and adjustment control determine when that signal changes; this sketch does not read analog concentration, calculate PPM, or calibrate the sensor. On a state change, the ESP32 updates the LCD and attempts to post the new state to the API. While the sensor remains in its alarm state, the firmware repeatedly plays the audio sample through the ESP32 DAC.
+
+The backend checks the device key, stores the latest state in MongoDB, and appends each received update to a history collection. It provides API endpoints for reading the latest state and history. There is no user interface or mobile notification service in the current repository.
 
 == Features
 
-- Reads gas sensor on analog input and computes PPM
-- Displays readings and status on a 16x2 I2C LCD (0x27)
-- Optional Arduino Cloud integration (via `thingProperties.h`)
-- Plays alarm audio when gas levels exceed normal air limits
-- Regulated Device notification with 60/20 sec break accrodingly
-- Filtered alarm to get rid of uncertain alarm
+- Reads the sensor module's digital output on ESP32 GPIO35
+- Displays a normal or gas-detected state on a 16x2 I2C LCD at I2C address `0x27`
+- Plays a PCM audio sample using the ESP32 DAC on GPIO25 while the alarm input is HIGH
+- Sends status updates over Wi-Fi to the configured HTTPS API endpoint
+- Retries Wi-Fi connection attempts after a disconnection
+- Stores the latest received status and a timestamped history in MongoDB
+- Exposes device-key-protected API routes for sensor updates, latest state, and history
+
+== How It Works
+
+. The ESP32 joins the Wi-Fi network configured in `firmware/arduino_secrets.h`.
+. GPIO35 is configured as a digital input and an interrupt watches for either signal edge. A 500 ms debounce interval is applied.
+. When the pin changes, the firmware treats HIGH as gas detected and LOW as normal. It updates the LCD and posts a JSON status to the server.
+. The server validates the device key and matching `device_id`, upserts the latest reading, and appends the reading to history. The stored `status` is numeric: `1` means alarm and `0` means normal.
+. If the sensor remains HIGH, the ESP32 plays the sample stored in `firmware/voices.h` repeatedly. Wi-Fi reconnection is attempted when disconnected.
+
+The firmware also sends a status once during startup. It currently waits only two seconds before displaying the ready state; that is not a verified MQ sensor warm-up period. Follow the sensor manufacturer's warm-up and calibration guidance before interpreting any state.
+At boot, the firmware initializes its status as normal and does not read GPIO35 before sending the startup status. If the sensor output is already HIGH at power-on, the display and server may initially report normal until the input changes. Never treat the startup status as confirmation that the air is safe.
 
 == Hardware Required
 
-- ESP32 development board (or equivalent with ADC and DAC)
-- MQ-series gas sensor (e.g., MQ-5 or MQ-2)
-- 16x2 I2C LCD (default address 0x27)
-- Speaker connected with amplifier module
-- Wires, breadboard, 3.3V power supply
+- ESP32 development board with a DAC output
+- MQ-5 (or compatible) sensor module with a digital alarm output
+- 16x2 I2C LCD module at address `0x27`
+- Audio amplifier and a compatible speaker
+- Suitable regulated power supplies, jumper wires, and a common ground
 
 == Wiring (as used by the sketch)
 
-- Gas sensor analog output -> GPIO35 (ADC input used in the sketch)
-- I2C LCD SDA -> GPIO13, SCL -> GPIO14 (Wire.begin(13,14))
-- Amplifier (+) -> GPIO25, Amplifier (+) -> Speaker (+)
-- Sensor VCC -> 3.3V (do NOT power MQ sensors from 5V when using ESP32 3.3V domain without level shifting)
-- All grounds connected together
+- Sensor digital output (DO) -> ESP32 GPIO35
+- LCD SDA -> ESP32 GPIO13
+- LCD SCL -> ESP32 GPIO14
+- ESP32 GPIO25 (DAC) -> amplifier audio input; amplifier output -> speaker
+- Sensor, LCD, amplifier, and ESP32 grounds -> common ground
+
+GPIO35 is input-only on common ESP32 boards. The firmware does not use the sensor's analog output. Power each module according to its own specifications. Before connecting a module output to the ESP32, verify that its voltage never exceeds the ESP32 input limit; use appropriate level shifting when needed. Do not connect a speaker directly to GPIO25.
 
 == Software Requirements
 
-- Arduino IDE / VSCode+Arduino-CLI
-- ESP32 board support installed (for Arduino IDE)
-- Libraries (install via Library Manager):
-  - Wire
-  - LiquidCrystal_I2C
-  - ArduinoIoTCloud (used if you enable cloud features)
+- Arduino IDE or Arduino CLI
+- ESP32 Arduino board support
+- `LiquidCrystal_I2C` library
+- Node.js and npm for the API
+- A MongoDB database and its connection URI
+- Wi-Fi access for the device
 
-== Quick Start
+`WiFi`, `Wire`, `HTTPClient`, `WiFiClientSecure`, and `LiquidCrystal_I2C` are included by the firmware or installed as a library. Arduino IoT Cloud and Pushbullet are not used by the current firmware.
 
-1. Install ESP32 board support in Arduino IDE.
-2. Install required libraries listed above.
-3. Create `arduino_secrets.h` (this file is intentionally excluded from the repository; see "Secrets and configuration" below).
-4. Open `Gas_leakage_detection_jun05a.ino` in the Arduino IDE.
-5. Select the correct ESP32 board and COM/USB port, then upload.
-6. Open Serial Monitor at `115200` to view debug output. Wait ~60 seconds for the sensor warm-up period (the sketch shows "MQ-5 Heating Up!!").
+== Quick Start: Firmware
 
+. Install ESP32 board support and the `LiquidCrystal_I2C` library.
+. Set the Wi-Fi credentials and device key in the local `firmware/arduino_secrets.h` file. This file is ignored by Git; see <<secrets-and-configuration>>.
+. Open `firmware/firmware.ino` in the Arduino IDE, or compile from the repository root with Arduino CLI:
++
+[source,shell]
+----
+arduino-cli compile --fqbn esp32:esp32:esp32 firmware
+----
++
+. Select the correct board and serial port, then upload. With Arduino CLI, replace `COM5` with the port for your computer:
++
+[source,shell]
+----
+arduino-cli upload -p COM5 --fqbn esp32:esp32:esp32 firmware
+----
++
+. Open Serial Monitor at `115200` baud. Confirm the LCD displays a status and device identifier, and check that the server receives the startup update.
+
+== Quick Start: API
+
+. In `server/`, create a local `.env` file with a MongoDB URI and the same device key configured in the firmware:
++
+[source,ini]
+----
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>/<database>
+SECRET_DEVICE_KEY_ONE=<device-key>
+----
++
+. Install dependencies and start the API:
++
+[source,shell]
+----
+cd server
+npm install
+npm start
+----
++
+. The local server listens on port `3000`. For local device testing, change the firmware's hard-coded API URL from `https://lpg-detection.vercel.app` to the computer's LAN address and `http://<computer-ip>:3000`. The ESP32 and computer must be on the same network, and the computer firewall must allow the connection.
+
+The deployment configuration in `server/vercel.json` routes requests to `server.js`. Configure `MONGODB_URI` and `SECRET_DEVICE_KEY_ONE` in the deployment provider's environment settings. The firmware endpoint is currently hard-coded to `https://lpg-detection.vercel.app`; update it when deploying the API under a different domain.
+
+[[secrets-and-configuration]]
 == Secrets and configuration
 
-The repository does NOT include `arduino_secrets.h` (it contains WiFi/cloud credentials and other sensitive information). Do not commit that file. Create it locally with your credentials. Example template (adjust to your cloud/credentials expectations):
+The firmware requires `firmware/arduino_secrets.h`, which is excluded by `.gitignore`. Create it locally using this template and substitute your own values:
 
+[source,cpp]
 ----
-// arduino_secrets.h (DIDN'T COMMITED)
-#define SECRET_DEVICE_KEY "SECRET_DEVICE_KEY"
-#define SECRET_OPTIONAL_PASS "Your_Password"
-#define SECRET_SSID "Your_SSID"
-#define PushBullet_Access_Token "PushBullet_Access_Token"
+#ifndef ARDUINO_SECRETS_H
+#define ARDUINO_SECRETS_H
 
+#define SECRET_SSID "your-wifi-name"
+#define SECRET_PASS "your-wifi-password"
+#define SECRET_DEVICE_KEY "your-device-key"
+
+#endif
 ----
 
-== Files in this repository
+The server reads `MONGODB_URI` and `SECRET_DEVICE_KEY_ONE` from `server/.env` locally, or from the hosting provider's environment configuration. The device key must match `SECRET_DEVICE_KEY` in the firmware. Do not commit either secrets file or put real credentials in source code, issue reports, or screenshots. If a credential has ever been committed or shared, revoke or rotate it; adding it to `.gitignore` does not remove it from Git history.
 
-- `Gas_leakage_detection_jun05a.ino` - Main Arduino sketch (ESP32)
-- `thingProperties.h` - Arduino Cloud properties and bindings
-- `voices.h` - PCM samples used for alarm audio
-- `sketch.json` - Arduino/Project metadata
-- `sketch.yaml` - Arduino/Project yaml
-- `ReadMe.adoc` - This document
-- `arduino_secrets.h` - NOT included (confidential)
+The firmware currently calls `WiFiClientSecure::setInsecure()`, which disables TLS certificate verification. This is unsuitable for a production deployment because the ESP32 cannot verify that it is talking to the genuine server.
 
-== How it works (brief)
+== API
 
-The sketch reads an analog value from the sensor pin, converts it to a sensor resistance (RS), computes a ratio RS/RO (RO is measured during setup after the warm-up period) and converts that ratio into an estimated PPM value using a fitted curve. When PPM crosses thresholds the sketch plays an alarm and updates `Comment`/`PPM` values (exposed to the cloud via `thingProperties.h`).
-#Note: It's wise to use the previous version of wired speaker with remote access, instead of wireless and without remote connection.
+All device routes include the device key in the URL. Invalid keys are rejected. The update route also requires the JSON `device_id` to equal the URL key.
 
-== Before Integrating
+[cols="1,2,2", options="header"]
+|===
+|Method |Route |Purpose
+|GET |`/` |Basic API status response
+|POST |`/devices/{device_key}/api/sensor` |Validate and store a sensor state
+|GET |`/devices/{device_key}/api/latest` |Return the latest stored state, or `null` if none exists
+|GET |`/devices/{device_key}/api/history` |Return all stored updates for that device, oldest first
+|===
 
-Please Download `Arduino IOT Remote` and `PushBullet` mobile app and set your configurations and everything properly to get best outcome and you can access from anywhere.
+Example update body:
+
+[source,json]
+----
+{
+  "device_id": "your-device-key",
+  "status": 1
+}
+----
+
+The update route returns a success response after both the latest record and history record have been written. The history route currently returns the entire result set without pagination.
+
+== Repository Files
+
+[cols="1,2", options="header"]
+|===
+|Path |Purpose
+|`firmware/firmware.ino` |ESP32 setup, sensor input, LCD, audio, Wi-Fi, and API requests
+|`firmware/voices.h` |PCM sample played through the ESP32 DAC
+|`firmware/sketch.yaml` |Arduino CLI board and port defaults
+|`firmware/arduino_secrets.h` |Local Wi-Fi and device credentials; ignored by Git
+|`server/server.js` |Express API routes, device-key checks, and MongoDB connection
+|`server/models/latest.js` |MongoDB schema for the latest device state
+|`server/models/history.js` |MongoDB schema for timestamped state history
+|`server/package.json` and `server/package-lock.json` |Node.js dependencies and scripts
+|`server/vercel.json` |Vercel deployment routing configuration
+|`server/.env` |Local API/database secrets; ignored by Git
+|`.gitignore` |Excludes local secrets and server dependencies
+|`ReadMe.adoc` |Project documentation
+|===
+
+The workspace also contains `app/` and `assests/` directories, but the current implementation and repository file list do not include application or image files in them. This README intentionally contains no image embeds.
+
+== User Manual
+
+=== Starting the monitor
+
+. Check that the sensor, LCD, amplifier, and ESP32 wiring is secure and that module voltages are compatible with the ESP32.
+. Start the API and confirm it can connect to MongoDB if remote logging is required.
+. Power the ESP32 and allow the sensor to warm up for the period specified by its manufacturer. The firmware's two-second startup display is not a substitute for this period.
+. Check the LCD. `Air is Normal.` indicates the digital sensor input is LOW; `Gas detected!!` indicates it is HIGH. The second row normally shows the configured device identifier or a Wi-Fi issue message.
+. If the sensor output is HIGH, the sound plays repeatedly and the device attempts to send its state to the API. The API history records received updates, not a continuous sample stream.
+
+=== Responding to an alarm
+
+Treat an alarm as potentially real. Follow local LPG emergency guidance: avoid flames and electrical switches, leave the area, and contact the appropriate emergency or gas service from a safe location. Do not rely on this prototype to declare an area safe or to protect people or property.
+
+=== Shutdown and maintenance
+
+Disconnect power before changing wiring. Periodically inspect connections and test the complete system using a safe procedure recommended by the sensor manufacturer. Do not release LPG or another flammable gas to test the detector. MQ sensors can drift and require appropriate warm-up, calibration, and replacement; this firmware does not monitor sensor health or provide a calibration workflow.
+
+== Troubleshooting
+
+[cols="1,2", options="header"]
+|===
+|Symptom |Checks and actions
+|LCD is blank or shows blocks |Check LCD power, common ground, SDA on GPIO13, SCL on GPIO14, I2C address `0x27`, and LCD contrast. Confirm the LCD module's pull-up voltage is safe for ESP32 I2C pins.
+|Sensor state never changes |Confirm the module's digital output is connected to GPIO35, its power and ground are correct, and its threshold control is adjusted according to the module documentation. Confirm the output is a safe ESP32 logic level. The firmware does not read the analog output.
+|Alarm is always active or triggers unexpectedly |Check the module's digital output polarity and threshold, allow the sensor its specified warm-up time, and account for environmental conditions. The current firmware interprets HIGH as alarm and has no filtering beyond a 500 ms interrupt debounce.
+|Alarm is missed immediately after power-on |The firmware does not sample GPIO35 before its startup report and initializes status as normal. Do not rely on the startup display; the firmware should be changed to sample and validate the sensor state before reporting normal.
+|No sound |Check that the amplifier input is connected to GPIO25, the amplifier and ESP32 share ground, the amplifier has suitable power, and the speaker is connected to the amplifier output. Do not drive the speaker directly from the GPIO.
+|Wi-Fi does not connect |Check SSID and password in `arduino_secrets.h`, signal strength, router compatibility, and the Serial Monitor at `115200` baud. The firmware attempts reconnection periodically.
+|API does not receive updates |Check internet/LAN connectivity, the configured firmware URL, server availability, device-key equality, and server logs. The firmware sends at startup and after sensor transitions; it does not retry a failed HTTP post until another update is triggered.
+|API returns an authorization error |Ensure the URL key, firmware `SECRET_DEVICE_KEY`, and server `SECRET_DEVICE_KEY_ONE` match exactly. The JSON `device_id` must match the URL key too.
+|Server exits during startup |Confirm `server/.env` defines `MONGODB_URI` and `SECRET_DEVICE_KEY_ONE`, MongoDB is reachable, and the database credentials and network access rules are correct.
+|Latest state is `null` or history is empty |The server has not successfully received a sensor update for that key. Check the device's Wi-Fi/API connection and review server logs.
+|===
+
+== Improvements and Product Roadmap
+
+=== Improvements already identified in the code
+
+- Add more robust firmware error handling and useful status/logging on the LCD. Evaluate an RTOS only if asynchronous work is needed; the current blocking audio playback should be addressed first.
+- Improve audio quality and reduce noise if the sound output needs to be clearer.
+- Add a LAN-only connectivity option for installations that must operate without internet access.
+- Separate device identity from authentication credentials.
+- Add pagination to the history endpoint.
+
+=== Additional work before considering a business product
+
+- Treat gas detection as a safety-critical function: use appropriate certified sensing hardware, independent fail-safe alarm circuitry, defined failure behavior, verified calibration and test procedures, and applicable product/regulatory certification. Obtain qualified safety and legal review for each target market.
+- Replace the single shared device key with per-device provisioning, revocation and rotation, authenticated owner/operator accounts, authorization roles, and audited administration. Validate status values and request size; rate-limit and monitor API traffic.
+- Enable TLS certificate verification on the device. Protect database access with least-privilege credentials, backups, retention rules, indexes, and documented recovery procedures.
+- Make event delivery reliable with bounded retries, offline buffering, timestamps/sequence numbers, health checks, watchdog behavior, and clear reporting of sensor, network, and server faults.
+- Design a maintainable enclosure, safe power supply and backup behavior, installation instructions, service intervals, traceable manufacturing, firmware update/signing process, and a support/incident response process.
+- Build an operator-facing dashboard and notification workflow only after authentication, privacy, retention, and alert-delivery behavior are designed and tested.
+
+These items are recommendations, not implemented features or commitments. The current project should be treated as a prototype until the safety, security, reliability, and certification work is complete.
 
 == Contributing
 
-Contributions are welcome. Open an issue or contact me at: muhammadrifat67@gmail.com
+Contributions are welcome. Open an issue or contact the maintainer at `muhammadrifat67@gmail.com`. Do not include Wi-Fi credentials, database URIs, or device keys in issues or pull requests.
 
 == License
 
-This project is released under the MIT License.
-
-== Contact
-
-Author: rifatparadoxical + 
-Email: muhammadrifat67@gmail.com
+The project metadata declares the MIT License.

@@ -1,4 +1,4 @@
-#include "arduino_secrets.h" 
+#include "arduino_secrets.h"
 #include <WiFi.h>
 #include <Wire.h>
 #include <HTTPClient.h>
@@ -21,45 +21,46 @@ volatile bool need2Change = false;
 unsigned long lastInterruptTime = 0;
 unsigned long long wifiStatus = 0;
 
-void sendData(){
+void sendData() {
   int response = 0;
-   if (WiFi.status() != WL_CONNECTED)  return;
+  if (WiFi.status() != WL_CONNECTED) return;
 
-    HTTPClient http;
+  HTTPClient http;
 
-    if (!http.begin(client, "https://lpg-detection.vercel.app/devices/" + String(SECRET_DEVICE_KEY) + "/api/sensor")) {
-        return;
-    }
+  if (!http.begin(client, "https://lpg-detection.vercel.app/devices/" + String(SECRET_DEVICE_KEY) + "/api/sensor")) {
+    return;
+  }
 
-    http.addHeader("Content-Type", "application/json");
-    String json =
+  http.addHeader("Content-Type", "application/json");
+  String json =
     "{\"device_id\":\""
-        + String(SECRET_DEVICE_KEY)
-        + "\","
-        "\"status\":"
-        + String(status)
-        + "}";
+    + String(SECRET_DEVICE_KEY)
+    + "\","
+      "\"status\":"
+    + String(status)
+    + "}";
 
 
-    response = http.POST(json);
+  response = http.POST(json);
 
-    if (response > 0) {
-        Serial.print("Server response: ");
-        Serial.println(response);
-    } else {
-        Serial.print("HTTP Error: ");
-        Serial.println(response);
-    }
-    http.end();
-
+  if (response == 200) {
+    Serial.print("Successfully sent data.");
+    lcd.setCursor(0, 1);
+    lcd.print("Data sent successfully.");
+  } else {
+    Serial.print("Failed to send data.");
+    lcd.setCursor(0, 1);
+    lcd.print("Failed to send data.");
+  }
+  http.end();
 }
 
-void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN){
-    for(int i = 0; i < sp_CRITICAL_LEN; i++){
-        dacWrite(25, pgm_read_byte(&(sp_CRITICAL[i])));
-        delayMicroseconds(1000000 / 16000);
-    }
-    delay(500);
+void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN) {
+  for (int i = 0; i < sp_CRITICAL_LEN; i++) {
+    dacWrite(25, pgm_read_byte(&(sp_CRITICAL[i])));
+    delayMicroseconds(1000000 / 16000);
+  }
+  delay(500);
 }
 
 void IRAM_ATTR onChangeFunction() {
@@ -75,7 +76,7 @@ void setup() {
   WiFi.hostname(hostname);
   WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
-  Wire.begin(13,14); // SDA, SCL
+  Wire.begin(13, 14);  // SDA, SCL
   pinMode(SENSOR, INPUT);
   attachInterrupt(digitalPinToInterrupt(SENSOR), onChangeFunction, CHANGE);
   lcd.init();
@@ -104,22 +105,22 @@ void setup() {
 }
 
 void loop() {
-  if ((millis() - wifiStatus >= 15000)&&(WiFi.status() != WL_CONNECTED)) {
+  if ((millis() - wifiStatus >= 15000) && (WiFi.status() != WL_CONNECTED)) {
     wifiStatus = millis();
     Serial.println("WiFi not connected. Reconnecting...");
     lcd.setCursor(0, 1);
     lcd.print("WiFi issue.          ");
     WiFi.disconnect();
     WiFi.reconnect();
-  } else if(WiFi.status() == WL_CONNECTED) {
+  } else if (WiFi.status() == WL_CONNECTED) {
     lcd.setCursor(0, 1);
     lcd.print(display_device_key);
   }
 
-  if(statusChanged){
+  if (statusChanged) {
     statusChanged = false;
     need2Change = true;
-    if(status){
+    if (status) {
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Gas detected!!     ");
@@ -129,11 +130,17 @@ void loop() {
       lcd.print("Air is Normal.     ");
     }
   }
-  if(status){
+  if (status) {
     playPCMSound(sp_CRITICAL, sp_CRITICAL_LEN);
   }
-  if(need2Change){
+  if (need2Change) {
     sendData();
     need2Change = false;
   }
 }
+
+// yet four improvements can be made:
+// 1. Implement RTOS and add more sophisticated error handling and logging on LCD
+// 2. More safety and security features including authentication, authorization and advanced security for server and database.
+// 3. Audio filterring and noise cancellation for better audio quality and clarity.
+// 4. Implement LAN connectivity.
