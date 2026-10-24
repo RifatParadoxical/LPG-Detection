@@ -166,6 +166,5 @@ app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
 
-//yet two improvements can be made:
+// improvements can be made:
 // 1. Separate device identity from authentication
-// 2. Pagination on the history endpoint

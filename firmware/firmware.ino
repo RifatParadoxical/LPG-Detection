@@ -1,9 +1,10 @@
-#include "arduino_secrets.h"
+#include <math.h>
 #include <WiFi.h>
 #include <Wire.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <LiquidCrystal_I2C.h>
+#include "arduino_secrets.h"
 #include "voices.h"
 
 const char* ssid = SECRET_SSID;
@@ -56,7 +57,9 @@ void sendData() {
 }
 
 void playPCMSound(const unsigned char* sp_CRITICAL, int sp_CRITICAL_LEN) {
-  for (int i = 0; i < sp_CRITICAL_LEN; i++) {
+  const unsigned int start = 44;
+  const unsigned int end = sp_CRITICAL_LEN - 1;
+  for (int i = start; i < end; i++) {
     dacWrite(25, pgm_read_byte(&(sp_CRITICAL[i])));
     delayMicroseconds(1000000 / 16000);
   }
@@ -142,5 +145,4 @@ void loop() {
 // yet four improvements can be made:
 // 1. Implement RTOS and add more sophisticated error handling and logging on LCD
 // 2. More safety and security features including authentication, authorization and advanced security for server and database.
-// 3. Audio filterring and noise cancellation for better audio quality and clarity.
-// 4. Implement LAN connectivity.
+// 3. Implement LAN connectivity.
